@@ -1,0 +1,186 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <Wire.h>
+
+WiFiClient espClient; 
+PubSubClient client(espClient);
+long lastMsg = 0;
+char msg[50];
+int value = 0;
+
+float temperatura = 0; //Señal que queremos publicar al brocker 
+float humedad = 0;
+const int ledPin9 = 2;  //GPIO 2
+const int ledPin2 = 4;  //     4
+const int ledPin3 = 15; //     15
+//PWM
+const int ledPin4 = 16; //     16
+const int freq = 5000;
+const int ledChannel = 0; 
+const int resolution = 8;
+//-----
+
+//--- SSID y password de muestro sevidor a internet ----
+const char* ssid = "INFINITUM210B_2.4";
+const char* password = "56qnaSutgt";
+
+//---Direccion del MQTT broker ip Address---
+const char* mqtt_server = "192.168.1.77";
+void setup()
+{
+  Serial.begin(115200);
+  setup_wifi();
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+
+  pinMode(ledPin9, OUTPUT);
+  pinMode(ledPin2, OUTPUT);
+  pinMode(ledPin3, OUTPUT);
+
+  ledcSetup(ledChannel,freq,resolution);
+  ledcAttachPin(ledPin4,ledChannel);
+}
+
+void setup_wifi()
+{
+  delay(10);
+  Serial.println();
+  Serial.print("Conectando a ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println(".");
+  Serial.println("Wifi conectado");
+  Serial.println("Direccion IP: ");
+  Serial.println(WiFi.localIP());
+}
+
+void callback(char* topic, byte* message, unsigned int length)
+{
+  Serial.print("Mensaje recibido en topic: ");
+  Serial.print(topic);
+  Serial.print(", Message: ");
+  String messageTemp;
+  for (int i=0; i < length; i++)
+  {
+    Serial.print((char)message[i]);
+    messageTemp += (char)message[i];
+  }
+  Serial.println();
+
+  //Primer OUTPUT (usando topic: esp32/output9)
+  if (String(topic) == "esp32/output9")
+  {
+    Serial.print("Cambio de salida: ");
+    if (messageTemp == "on")
+    {
+      Serial.println("on");
+      digitalWrite(ledPin9, HIGH);
+    }
+    else if (messageTemp == "off")
+    {
+      Serial.println("off");
+      digitalWrite(ledPin9,LOW);
+    }
+  }
+
+  //Segundo OUTPUT (usando topic: esp32/output2
+  if (String(topic) == "esp32/output2")
+  {
+    Serial.print("Cambio de salida: ");
+    if (messageTemp == "on")
+    {
+      Serial.println("on");
+      digitalWrite(ledPin2, HIGH);
+    }
+    else if (messageTemp == "off")
+    {
+      Serial.println("off");
+      digitalWrite(ledPin2, LOW);
+    }
+  }
+
+  //Tercer output (usando topic: esp32/output)
+  if (String(topic) == "esp32/output3")
+  {
+    Serial.print("Cambio de salida: ");
+    if (messageTemp == "on")
+    {
+      Serial.println("on");
+      digitalWrite(ledPin3, HIGH);
+    }
+    else if (messageTemp == "off")
+    {
+      Serial.println("off");
+      digitalWrite(ledPin3, LOW);
+    }
+  }
+
+  //Cuarto output (usando topic: esp32/output4)
+  if (String(topic) == "esp32/output4")
+  {
+    Serial.print("Cambio de salida PWM: ");
+    Serial.println("messageTemp");
+    ledcWrite(ledChannel, messageTemp.toInt());
+  }
+}
+
+void reconnect()
+{
+  while (!client.connected())
+  {
+    Serial.print("Intentando conexión MQTT...");
+    if (client.connect("ESP8266Client"))
+    {
+      Serial.println("Conectado");
+      client.subscribe("esp32/output9");//topic: esp32/output9
+      client.subscribe("esp32/output2");//topic: esp32/output2
+      client.subscribe("esp32/output3");//topic: esp32/output3
+      client.subscribe("esp32/output4");//topic: esp32/output4
+    }
+    else
+    {
+      Serial.print("Fallo, rc=");
+      Serial.print(client.state());
+      Serial.println("Intentelo de nuevo en 5s");
+      delay(5000);
+    }
+  }
+}
+
+void loop()
+{
+  if (!client.connected())
+  {
+    reconnect();
+  }
+  client.loop();
+  long now = millis();
+  if (now - lastMsg > 1000) //tiempo de muestreo en mili segundos 100 ms
+  {
+    lastMsg = now;
+
+    //Señal 1 que queremos enviar al brocker
+    temperatura = analogRead(36)*(100.0/4095.0);
+    //convertir el valor a char array
+    char tempString[8];
+    dtostrf(temperatura, 1, 2, tempString);
+    Serial.print("Temperatura: ");
+    Serial.println(tempString);
+    client.publish("esp32/temperature", tempString);//topic: esp32/temperature
+
+    //señal 2 enviada al brocker
+    humedad = 289.78;
+
+   //convertir el valor a char array
+   char humString[8];
+   dtostrf(humedad, 1, 2, humString);
+   Serial.print("Humedad: ");
+   Serial.println(humString);
+   client.publish("esp32/humidity",humString);//topic: esp32/ humudity
+  }
+}
